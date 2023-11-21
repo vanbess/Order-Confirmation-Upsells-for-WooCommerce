@@ -46,22 +46,98 @@ function sbwc_order_confirmation_upsells_riode_options_page()
 {
 ?>
     <div class="wrap">
+
         <h1><?php _e('Order Confirmation Upsells', 'woocommerce'); ?></h1>
+
+        <!-- if polylang is installed -->
+        <?php if (function_exists('pll_languages_list')) { ?>
+            <p class="description"><?php _e('Enter the product IDs for upsells, separated by commas. For languages you do not want to display upsells for, leave the relevant input empty.', 'sbwc-order-confirmation-upsells-riode'); ?></p>
+        <!-- if polylang not installed -->
+        <?php } else { ?>
+            <p class="description"><?php _e('Enter the product IDs for upsells, separated by commas.', 'sbwc-order-confirmation-upsells-riode'); ?></p>
+        <?php } ?>
+
         <form method="post" action="options.php">
+
             <?php settings_fields('sbwc_order_confirmation_upsells_riode_settings'); ?>
             <?php do_settings_sections('sbwc_order_confirmation_upsells_riode_settings'); ?>
+
             <table class="form-table">
-                <tr valign="top">
-                    <th scope="row"><?php _e('Upsell Product IDs', 'sbwc-order-confirmation-upsells-riode'); ?></th>
-                    <td>
-                        <input type="text" name="sbwc_order_confirmation_upsells_riode_product_ids" value="<?php echo esc_attr(get_option('sbwc_order_confirmation_upsells_riode_product_ids')); ?>" />
-                        <p class="description"><?php _e('Enter the product IDs for upsells, separated by commas.', 'sbwc-order-confirmation-upsells-riode'); ?></p>
-                    </td>
-                </tr>
+                <?php
+                // Check if Polylang is active
+                if (function_exists('pll_languages_list')) {
+
+                    $languages = pll_languages_list();
+
+                    //debug
+                    // echo '<pre>';
+                    // print_r($languages);
+                    // echo '</pre>';
+
+                    foreach ($languages as $language) {
+
+                        $option_name = 'sbwc_order_confirmation_upsells_riode_product_ids_' . $language;
+                        $option_value = get_option($option_name);
+                ?>
+                        <tr valign="top">
+                            <th scope="row"><?php echo sprintf(__('Upsell Product IDs (%s):', 'sbwc-order-confirmation-upsells-riode'), strtoupper($language)); ?></th>
+                            <td>
+                                <input type="text" name="<?php echo $option_name; ?>" value="<?php echo esc_attr($option_value); ?>" />
+
+                            </td>
+                        </tr>
+                    <?php
+                    }
+
+                    // If Polylang is not active
+                } else {
+                    $option_name = 'sbwc_order_confirmation_upsells_riode_product_ids';
+                    $option_value = get_option($option_name);
+                    ?>
+                    <tr valign="top">
+                        <th scope="row"><?php _e('Upsell Product IDs:', 'sbwc-order-confirmation-upsells-riode'); ?></th>
+                        <td>
+                            <input type="text" name="<?php echo $option_name; ?>" value="<?php echo esc_attr($option_value); ?>" />
+                        </td>
+                    </tr>
+                <?php
+                }
+                ?>
             </table>
             <?php submit_button(); ?>
         </form>
     </div>
+
+    <style>
+        /* 400px width for text inputs */
+        input[type="text"] {
+            width: 400px;
+        }
+
+        /* bold and italic description */
+        .description {
+            font-style: italic;
+            font-weight: bold;
+            font-size: 16px !important;
+        }
+
+        /* white background heading with padding of 10px 15px and bottom margin of 30px */
+        .wrap h1 {
+            background-color: #fff;
+            padding: 10px 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #646970;
+
+        }
+
+        /* color #646970 for input labels */
+        .form-table th {
+            color: #646970;
+        }
+    </style>
 <?php
 }
 
