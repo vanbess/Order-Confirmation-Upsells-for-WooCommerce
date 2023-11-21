@@ -35,6 +35,17 @@ function sbwc_order_confirmation_upsells_riode_register_settings()
 {
     // Register a new setting for upsell product IDs
     register_setting('sbwc_order_confirmation_upsells_riode_settings', 'sbwc_order_confirmation_upsells_riode_product_ids');
+
+    // Register a new setting for upsell product IDs for each language
+    if (function_exists('pll_languages_list')) {
+        
+        $languages = pll_languages_list();
+
+        foreach ($languages as $language) {
+            $option_name = 'sbwc_order_confirmation_upsells_riode_product_ids_' . $language;
+            register_setting('sbwc_order_confirmation_upsells_riode_settings', $option_name);
+        }
+    }
 }
 
 add_action('admin_init', 'sbwc_order_confirmation_upsells_riode_register_settings');
