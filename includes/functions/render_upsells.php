@@ -2,8 +2,16 @@
 
 add_action('woocommerce_thankyou', function () {
 
-    // retrieve upsell product ids
-    $upsell_product_ids = get_option('sbwc_order_confirmation_upsells_riode_product_ids');
+    // check if Polylang exists and get current lang and upsell product ids
+    if (function_exists('pll_current_language')) {
+        $current_lang = pll_current_language();
+        $upsell_product_ids = get_option('sbwc_order_confirmation_upsells_riode_product_ids_' . $current_lang);
+    }else{
+        $upsell_product_ids = get_option('sbwc_order_confirmation_upsells_riode_product_ids');
+    }
+
+    // bail if no upsell ids
+    if (!$upsell_product_ids || $upsell_product_ids == '') return;
 
     // debug
     // <pre>
