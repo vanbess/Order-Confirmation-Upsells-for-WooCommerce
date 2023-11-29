@@ -4,7 +4,7 @@
 // ===========================
 function sbwc_order_confirmation_upsells_riode_sales_tracking_page()
 {
-    $upsell_ids = get_option('sbwc_order_confirmation_upsells_riode_product_ids');
+    $upsell_ids = get_option('sbwc_ocus_product_ids');
     $upsell_ids = explode(',', $upsell_ids);
 
     if (empty($upsell_ids)) {

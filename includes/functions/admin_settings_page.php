@@ -34,7 +34,7 @@ function sbwc_order_confirmation_upsells_riode_add_admin_menu()
 function sbwc_order_confirmation_upsells_riode_register_settings()
 {
     // Register a new setting for upsell product IDs
-    register_setting('sbwc_order_confirmation_upsells_riode_settings', 'sbwc_order_confirmation_upsells_riode_product_ids');
+    register_setting('sbwc_order_confirmation_upsells_riode_settings', 'sbwc_ocus_product_ids');
 
     // Register a new setting for upsell product IDs for each language
     if (function_exists('pll_languages_list')) {
@@ -42,7 +42,7 @@ function sbwc_order_confirmation_upsells_riode_register_settings()
         $languages = pll_languages_list();
 
         foreach ($languages as $language) {
-            $option_name = 'sbwc_order_confirmation_upsells_riode_product_ids_' . $language;
+            $option_name = 'sbwc_ocus_product_ids_' . $language;
             register_setting('sbwc_order_confirmation_upsells_riode_settings', $option_name);
         }
     }
@@ -87,7 +87,7 @@ function sbwc_order_confirmation_upsells_riode_options_page()
 
                     foreach ($languages as $language) {
 
-                        $option_name = 'sbwc_order_confirmation_upsells_riode_product_ids_' . $language;
+                        $option_name = 'sbwc_ocus_product_ids_' . $language;
                         $option_value = get_option($option_name);
                 ?>
                         <tr valign="top">
@@ -102,7 +102,7 @@ function sbwc_order_confirmation_upsells_riode_options_page()
 
                     // If Polylang is not active
                 } else {
-                    $option_name = 'sbwc_order_confirmation_upsells_riode_product_ids';
+                    $option_name = 'sbwc_ocus_product_ids';
                     $option_value = get_option($option_name);
                     ?>
                     <tr valign="top">

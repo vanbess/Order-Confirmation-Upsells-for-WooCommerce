@@ -4,7 +4,7 @@
  * Plugin Name: SBWC Order Confirmation Page Upsells Riode
  * Plugin URI: https://silverbackev.co.za/
  * Description: This plugin adds upsells to the order confirmation page no websites which uses the Riode theme.
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author: WC Bessinger
  * Author URI: https://silvebackdev.co.za/
  * License: GPL v2 or later
@@ -46,20 +46,17 @@ add_action('plugins_loaded', function () {
     define('SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_URI', plugin_dir_url(__FILE__));
     define('SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH', plugin_dir_path(__FILE__));
 
-    // activation hook
-    require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/activation_hook.php');
+    // register custom db table
+    require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/register_db_table.php');
+
+    // update db table
+    require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/update_db_table.php');
 
     // admin settings page
     require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/admin_settings_page.php');
 
     // admin tracking page
     require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/admin_tracking_page.php');
-
-    // tracking update impressions
-    require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/tracking_update_impressions.php');
-
-    // tracking update clicks
-    require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/tracking_update_clicks.php');
 
     // update tracking via action scheduler
     require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/as_update_tracking.php');

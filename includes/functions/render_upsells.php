@@ -5,13 +5,40 @@ add_action('woocommerce_thankyou', function () {
     // check if Polylang exists and get current lang and upsell product ids
     if (function_exists('pll_current_language')) {
         $current_lang = pll_current_language();
-        $upsell_product_ids = get_option('sbwc_order_confirmation_upsells_riode_product_ids_' . $current_lang);
+        $upsell_product_ids = get_option('sbwc_ocus_product_ids_' . $current_lang);
     } else {
-        $upsell_product_ids = get_option('sbwc_order_confirmation_upsells_riode_product_ids');
+        $upsell_product_ids = get_option('sbwc_ocus_product_ids');
     }
 
     // bail if no upsell ids
     if (!$upsell_product_ids || $upsell_product_ids == '') return;
+
+    // explode upsell product ids
+    $upsell_product_ids = explode(',', $upsell_product_ids);
+
+    // ===================
+    // update impressions
+    // ===================
+    $impressions = get_transient('sbwc_ocus_impressions');
+
+    // debug
+    // delete_transient('sbwc_ocus_impressions');
+    // return
+
+    if (!$impressions) {
+        $impressions = array();
+    }
+
+    foreach ($upsell_product_ids as $upsell_product_id) {
+        $impressions[$upsell_product_id] = isset($impressions[$upsell_product_id]) ? $impressions[$upsell_product_id] + 1 : 1;
+    }
+
+    set_transient('sbwc_ocus_impressions', $impressions, DAY_IN_SECONDS);
+
+    // debug impressions
+    // echo '<pre>';
+    // print_r(get_transient('sbwc_ocus_impressions'));
+    // echo '</pre>';
 
     $order_id = wc_get_order_id_by_order_key($_GET['key']);
 
@@ -21,12 +48,16 @@ add_action('woocommerce_thankyou', function () {
     // Get the order products
     $order_products = $order->get_items();
 
+    // =============
+    // update sales
+    // =============
+
     // debug
-    // delete_option('sbwc_ocus_sales_data');
+    // delete_transient('sbwc_ocus_sales_data');
     // return;
 
     // Add order products to options table option 'sbwc_ocus_sales_data' in array format: [$order_id][] = [$product_id => $qty]
-    $ocus_sales_data = get_option('sbwc_ocus_sales_data', array());
+    $ocus_sales_data = get_transient('sbwc_ocus_sales_data', array());
 
     $order_id = $order->get_id();
 
@@ -39,20 +70,22 @@ add_action('woocommerce_thankyou', function () {
             $ocus_sales_data[$order_id][] = [$product_id => $qty];
         }
 
-        update_option('sbwc_ocus_sales_data', $ocus_sales_data);
+        set_transient('sbwc_ocus_sales_data', $ocus_sales_data);
 
     endif;
 
     // debug
     // print_r(get_option('sbwc_ocus_sales_data', array()));
 
-    // session_start();
+    // =================================
+    // bail if upsells already rendered
+    // =================================
 
     // // bail if $_SESSION['us_checkout_form'] is set
+    // session_start();
     // if (isset($_SESSION['us_checkout_form'])) return;
 
-    // explode
-    $upsell_product_ids = explode(',', $upsell_product_ids); ?>
+?>
 
     <div id="us_cont_outer">
 
@@ -310,7 +343,7 @@ add_action('woocommerce_thankyou', function () {
                             // send ajax request to get updated checkout form
                             data = {
                                 '_ajax_nonce': '<?php echo wp_create_nonce('us get checkout form') ?>',
-                                'action': 'us_get_co_form',
+                                'action': 'sbwc_ocus_get_co_form',
                                 'cart_item_key': cart_item_key,
                             }
 
@@ -345,7 +378,7 @@ add_action('woocommerce_thankyou', function () {
 
                         data = {
                             '_ajax_nonce': '<?php echo wp_create_nonce('us get checkout form') ?>',
-                            'action': 'us_get_co_form',
+                            'action': 'sbwc_ocus_get_co_form',
                             'order_id': $(document).find('#sbwc_ocus_checkout_form').attr('data-current-order') ? $(document).find('#sbwc_ocus_checkout_form').attr('data-current-order') : 'false',
                             'previous_order_key': '<?php echo $_GET['key']; ?>',
                         }
@@ -393,6 +426,25 @@ add_action('woocommerce_thankyou', function () {
                         var spinner = $('<div class="us_spinner_checkout"></div>');
                         $('#us_checkout_form').append(spinner);
                         $('#us_checkout_form').addClass('us_dimmed');
+                    });
+
+                    // -------------------------
+                    // register upsell clicks
+                    // -------------------------
+                    $('.us_prod_cont').on('mousedown', function() {
+
+                        // get checkbox value
+                        let checkbox_val = $(this).find('.us_checkbox').val();
+
+                        $.post('<?php echo admin_url('admin-ajax.php'); ?>', {
+                            '_ajax_nonce': '<?php echo wp_create_nonce('us register clicks') ?>',
+                            'action': 'sbwc_ocus_register_clicks',
+                            'product_id': checkbox_val,
+                        }, function(response) {
+                            // debug
+                            // console.log(response);
+                        });
+
                     });
 
                 });
@@ -833,19 +885,58 @@ add_action('woocommerce_thankyou', function () {
 
 <?php }, 1);
 
+/**
+ * Register clicks
+ */
+add_action('wp_ajax_sbwc_ocus_register_clicks', 'sbwc_ocus_register_clicks');
+add_action('wp_ajax_nopriv_sbwc_ocus_register_clicks', 'sbwc_ocus_register_clicks');
 
-add_action('wp_ajax_us_get_co_form', 'us_get_co_form');
-add_action('wp_ajax_nopriv_us_get_co_form', 'us_get_co_form');
+function sbwc_ocus_register_clicks()
+{
 
-function us_get_co_form()
+    check_ajax_referer('us register clicks', '_ajax_nonce');
+
+    // get product id
+    $product_id = $_POST['product_id'];
+
+    // get clicks
+    $clicks = get_transient('sbwc_ocus_clicks');
+
+    // if no clicks, set to empty array
+    if (!$clicks) {
+        $clicks = array();
+    }
+
+    // if product id does not exist in $clicks, set to 0
+    if (!isset($clicks[$product_id])) {
+        $clicks[$product_id] = 0;
+    }
+
+    // increment clicks
+    $clicks[$product_id]++;
+
+    // set transient
+    $click_transient_set =  set_transient('sbwc_ocus_clicks', $clicks, DAY_IN_SECONDS);
+
+    if ($click_transient_set) :
+        wp_send_json_success(['clicks transient set' => get_transient('sbwc_ocus_clicks')]);
+    else :
+        wp_send_json('clicks transient not set');
+    endif;
+}
+
+/**
+ * Fetch and return checkout form
+ */
+add_action('wp_ajax_sbwc_ocus_get_co_form', 'sbwc_ocus_get_co_form');
+add_action('wp_ajax_nopriv_sbwc_ocus_get_co_form', 'sbwc_ocus_get_co_form');
+
+function sbwc_ocus_get_co_form()
 {
 
     check_ajax_referer('us get checkout form', '_ajax_nonce');
 
     $cart = WC()->cart;
-
-    // // if cart is empty, return
-    // if ($cart->is_empty()) wp_die('Cart is currently empty.');
 
     // if is $_POST['cart_item_key'], remove item from cart
     if ($_POST['cart_item_key']) {
@@ -855,12 +946,6 @@ function us_get_co_form()
 
         // calculate totals
         $cart->calculate_totals();
-
-        // get cart item count
-        $cart_item_count = $cart->get_cart_contents_count();
-
-        // if cart item count is 0, return
-        if ($cart_item_count == 0) wp_die('Cart is currently empty.');
     }
 
     // add flag $_SESSION['us_checkout_form'] to session (used to determine whether user has already been offered upsells)
@@ -870,7 +955,6 @@ function us_get_co_form()
     // init checkout
     $checkout = WC()->checkout();
 
-    
     do_action('woocommerce_before_checkout_form', $checkout);
 
     // If checkout registration is disabled and not logged in, the user cannot checkout.
