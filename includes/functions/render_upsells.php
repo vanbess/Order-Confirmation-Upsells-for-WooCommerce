@@ -13,10 +13,43 @@ add_action('woocommerce_thankyou', function () {
     // bail if no upsell ids
     if (!$upsell_product_ids || $upsell_product_ids == '') return;
 
-    //debug
-    // echo '<pre>';
-    // print_r($upsell_product_ids);
-    // echo '</pre>';
+    $order_id = wc_get_order_id_by_order_key($_GET['key']);
+
+    // Get the order from order key
+    $order = wc_get_order($order_id);
+
+    // Get the order products
+    $order_products = $order->get_items();
+
+    // debug
+    // delete_option('sbwc_ocus_sales_data');
+    // return;
+
+    // Add order products to options table option 'sbwc_ocus_sales_data' in array format: [$order_id][] = [$product_id => $qty]
+    $ocus_sales_data = get_option('sbwc_ocus_sales_data', array());
+
+    $order_id = $order->get_id();
+
+    // if order id does not exist in $ocus_sales_data, add it
+    if (!array_key_exists($order_id, $ocus_sales_data)) :
+
+        foreach ($order_products as $order_product) {
+            $product_id                   = $order_product->get_id();
+            $qty                          = $order_product->get_quantity();
+            $ocus_sales_data[$order_id][] = [$product_id => $qty];
+        }
+
+        update_option('sbwc_ocus_sales_data', $ocus_sales_data);
+
+    endif;
+
+    // debug
+    // print_r(get_option('sbwc_ocus_sales_data', array()));
+
+    // session_start();
+
+    // // bail if $_SESSION['us_checkout_form'] is set
+    // if (isset($_SESSION['us_checkout_form'])) return;
 
     // explode
     $upsell_product_ids = explode(',', $upsell_product_ids); ?>
@@ -179,7 +212,6 @@ add_action('woocommerce_thankyou', function () {
                         // retrieve nonce value
                         let nonce = cart_nonce.val();
 
-
                         //  get all checked checkbox values
                         $('.us_checkbox:checked').each(function() {
 
@@ -189,17 +221,10 @@ add_action('woocommerce_thankyou', function () {
                             // get cart item key
                             let cart_item_key = $('.mini-list a[data-product_id="' + product_id + '"]').attr('data-cart_item_key');
 
-                            // if product id and cart key not in cart_item_keys array, push product id and cart item key to cart_item_keys array
-                            if (!cart_item_keys[product_id] && !cart_item_keys[cart_item_key]) {
-                                // cart_item_keys[product_id] = cart_item_key;
-                                cart_item_keys[product_id] = window.location.href + '?remove_item=' + cart_item_key + '&_wpnonce=' + nonce;
-                            }
+                            // set checkbox data attribute to cart item key
+                            $(this).attr('data-cart_item_key', cart_item_key);
 
                         });
-
-                        // debug
-                        console.log(cart_item_keys);
-
 
                     });
 
@@ -265,7 +290,10 @@ add_action('woocommerce_thankyou', function () {
                         // if unchecked, remove item from cart
                         if (!$(this).is(':checked')) {
 
-                            console.log('unchecked');
+                            // console.log('unchecked');
+
+                            // get cart item key
+                            let cart_item_key = $(this).attr('data-cart_item_key');
 
                             // get product id from checkbox value
                             let product_id = $(this).val();
@@ -279,8 +307,30 @@ add_action('woocommerce_thankyou', function () {
                             // trigger click on dummy element
                             remove_from_cart_url_dummy.trigger('click');
 
-                            // trigger fragment refresh
-                            $(document).trigger('wc_fragment_refresh');
+                            // send ajax request to get updated checkout form
+                            data = {
+                                '_ajax_nonce': '<?php echo wp_create_nonce('us get checkout form') ?>',
+                                'action': 'us_get_co_form',
+                                'cart_item_key': cart_item_key,
+                            }
+
+                            $.post('<?php echo admin_url('admin-ajax.php'); ?>', data, function(response) {
+
+                                // console.log(response)
+
+                                if (response == 'Cart is currently empty.') {
+                                    $('#us_checkout_form').empty().hide();
+                                } else {
+                                    $('#us_checkout_form').empty().append(response).show();
+                                }
+
+                                // trigger fragment refresh
+                                $(document).trigger('wc_fragment_refresh');
+
+                                // trigger mini cart fragment refresh
+                                $(document).trigger('wc_fragments_refreshed');
+
+                            })
 
                         }
                     });
@@ -293,17 +343,33 @@ add_action('woocommerce_thankyou', function () {
                         // close popup
                         $.magnificPopup.close();
 
-                        // if any checkbox is checked, append go to cart button to upsell container
-                        if ($('.us_checkbox:checked').length) {
-
-                            // if go to cart button does not exist
-                            if (!$('.us_go_to_cart_btn').length) {
-
-                                // append go to cart button
-                                $('.us_cont').append('<a href="<?php echo wc_get_checkout_url(); ?>" class="button button-primary us_go_to_cart_btn"><?php _e('Go to Checkout', 'woocommerce'); ?></a>');
-
-                            }
+                        data = {
+                            '_ajax_nonce': '<?php echo wp_create_nonce('us get checkout form') ?>',
+                            'action': 'us_get_co_form',
+                            'order_id': $(document).find('#sbwc_ocus_checkout_form').attr('data-current-order') ? $(document).find('#sbwc_ocus_checkout_form').attr('data-current-order') : 'false',
+                            'previous_order_key': '<?php echo $_GET['key']; ?>',
                         }
+
+                        console.log(data);
+
+                        $.post('<?php echo admin_url('admin-ajax.php'); ?>', data, function(response) {
+
+                            // console.log(response);
+
+                            if (response == 'Cart is currently empty.') {
+                                $('#us_checkout_form').empty().hide();
+                            } else {
+                                $('#us_checkout_form').empty().append(response).show();
+                            }
+
+                            // trigger fragment refresh
+                            $(document).trigger('wc_fragment_refresh');
+
+                            // trigger mini cart fragment refresh
+                            $(document).trigger('wc_fragments_refreshed');
+
+
+                        })
 
                     });
 
@@ -320,6 +386,14 @@ add_action('woocommerce_thankyou', function () {
 
                     }
 
+                    // -------------------------
+                    // place order button click
+                    // -------------------------
+                    $(document).on('click', '#place_order', function() {
+                        var spinner = $('<div class="us_spinner_checkout"></div>');
+                        $('#us_checkout_form').append(spinner);
+                        $('#us_checkout_form').addClass('us_dimmed');
+                    });
 
                 });
             </script>
@@ -339,6 +413,22 @@ add_action('woocommerce_thankyou', function () {
                     position: absolute;
                     top: 40%;
                     left: 45%;
+                    transform: translate(-50%, -50%);
+                    border: 3px solid #f3f3f3;
+                    border-radius: 50%;
+                    border-top: 3px solid #3498db;
+                    width: 40px;
+                    height: 40px;
+                    -webkit-animation: spin 0.5s linear infinite;
+                    animation: spin 0.5s linear infinite;
+                    z-index: 1000;
+                }
+
+                /* spinner checkout form */
+                .us_spinner_checkout {
+                    position: absolute;
+                    top: 40%;
+                    left: 50%;
                     transform: translate(-50%, -50%);
                     border: 3px solid #f3f3f3;
                     border-radius: 50%;
@@ -432,6 +522,7 @@ add_action('woocommerce_thankyou', function () {
                     background: #dcdcdc;
                     text-align: center;
                     border: none;
+                    cursor: pointer;
                 }
 
                 /* light background for checkbox input cont */
@@ -500,7 +591,7 @@ add_action('woocommerce_thankyou', function () {
 
                 /* time in minutes */
                 .us_time_minutes {
-                    background: var(--wp--preset--color--vivid-red);
+                    background: var(--rio-alert-color);
                     padding: 5px 10px;
                     border-radius: 5px;
                     color: white;
@@ -511,7 +602,7 @@ add_action('woocommerce_thankyou', function () {
 
                 /* time in seconds */
                 .us_time_seconds {
-                    background: var(--wp--preset--color--vivid-red);
+                    background: var(--rio-alert-color);
                     padding: 5px 10px;
                     border-radius: 5px;
                     color: white;
@@ -544,9 +635,33 @@ add_action('woocommerce_thankyou', function () {
                     box-shadow: 0px 0px 4px lightgray;
                 }
 
-                /* 1600 */
-                @media screen and (max-width: 1600px) {
+                .woocommerce-form-coupon-toggle {
+                    display: none;
                 }
+
+                div#us_checkout_form {
+                    background: #f8f8f8;
+                    padding: 30px 30px 0 30px;
+                    margin-top: 40px;
+                    border-radius: 5px;
+                    box-shadow: 0px 0px 3px lightgrey;
+                }
+
+                div#order_review {
+                    background: white;
+                }
+
+                button#pbs_bundle_atc {
+                    display: none;
+                }
+
+                div#us_checkout_form {
+                    display: none;
+                    position: relative;
+                }
+
+                /* 1600 */
+                @media screen and (max-width: 1600px) {}
 
                 /* 1536 */
                 @media screen and (max-width: 1536px) {}
@@ -702,20 +817,105 @@ add_action('woocommerce_thankyou', function () {
 
                 /* 328 */
                 @media screen and (max-width: 328px) {
-                    .us_cont{
+                    .us_cont {
                         margin-left: -15px;
                         margin-right: -15px;
                     }
                 }
-
             </style>
+
+            <div id="us_checkout_form">
+
+            </div>
 
         </div>
     </div>
 
-<?php });
+<?php }, 1);
 
 
+add_action('wp_ajax_us_get_co_form', 'us_get_co_form');
+add_action('wp_ajax_nopriv_us_get_co_form', 'us_get_co_form');
 
+function us_get_co_form()
+{
+
+    check_ajax_referer('us get checkout form', '_ajax_nonce');
+
+    $cart = WC()->cart;
+
+    // // if cart is empty, return
+    // if ($cart->is_empty()) wp_die('Cart is currently empty.');
+
+    // if is $_POST['cart_item_key'], remove item from cart
+    if ($_POST['cart_item_key']) {
+
+        // remove item from cart
+        $cart->remove_cart_item($_POST['cart_item_key']);
+
+        // calculate totals
+        $cart->calculate_totals();
+
+        // get cart item count
+        $cart_item_count = $cart->get_cart_contents_count();
+
+        // if cart item count is 0, return
+        if ($cart_item_count == 0) wp_die('Cart is currently empty.');
+    }
+
+    // add flag $_SESSION['us_checkout_form'] to session (used to determine whether user has already been offered upsells)
+    session_start();
+    $_SESSION['us_checkout_form'] = true;
+
+    // init checkout
+    $checkout = WC()->checkout();
+
+    
+    do_action('woocommerce_before_checkout_form', $checkout);
+
+    // If checkout registration is disabled and not logged in, the user cannot checkout.
+    if (!$checkout->is_registration_enabled() && $checkout->is_registration_required() && !is_user_logged_in()) {
+        echo esc_html(apply_filters('woocommerce_checkout_must_be_logged_in_message', __('You must be logged in to checkout.', 'woocommerce')));
+        return;
+    }
 
 ?>
+
+    <form id="sbwc_ocus_checkout_form" name="checkout" method="post" class="checkout woocommerce-checkout" action="<?php echo esc_url(wc_get_checkout_url()); ?>" enctype="multipart/form-data">
+
+        <?php if ($checkout->get_checkout_fields()) : ?>
+
+            <?php do_action('woocommerce_checkout_before_customer_details'); ?>
+
+            <div class="col2-set" id="customer_details" style="display: none;">
+                <div class="col-1">
+                    <?php do_action('woocommerce_checkout_billing'); ?>
+                </div>
+
+                <div class="col-2">
+                    <?php do_action('woocommerce_checkout_shipping'); ?>
+                </div>
+            </div>
+
+            <?php do_action('woocommerce_checkout_after_customer_details'); ?>
+
+        <?php endif; ?>
+
+        <?php do_action('woocommerce_checkout_before_order_review_heading'); ?>
+
+        <h3 id="order_review_heading"><?php esc_html_e('Your order', 'woocommerce'); ?></h3>
+
+        <?php do_action('woocommerce_checkout_before_order_review'); ?>
+
+        <div id="order_review" class="woocommerce-checkout-review-order">
+            <?php do_action('woocommerce_checkout_order_review'); ?>
+        </div>
+
+        <?php do_action('woocommerce_checkout_after_order_review'); ?>
+
+    </form>
+
+<?php do_action('woocommerce_after_checkout_form', $checkout);
+
+    wp_die();
+}
