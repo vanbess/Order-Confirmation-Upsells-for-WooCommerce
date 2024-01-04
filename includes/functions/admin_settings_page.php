@@ -38,7 +38,7 @@ function sbwc_order_confirmation_upsells_riode_register_settings()
 
     // Register a new setting for upsell product IDs for each language
     if (function_exists('pll_languages_list')) {
-        
+
         $languages = pll_languages_list();
 
         foreach ($languages as $language) {
@@ -63,7 +63,7 @@ function sbwc_order_confirmation_upsells_riode_options_page()
         <!-- if polylang is installed -->
         <?php if (function_exists('pll_languages_list')) { ?>
             <p class="description"><?php _e('Enter the product IDs for upsells, separated by commas. For languages you do not want to display upsells for, leave the relevant input empty.', 'sbwc-order-confirmation-upsells-riode'); ?></p>
-        <!-- if polylang not installed -->
+            <!-- if polylang not installed -->
         <?php } else { ?>
             <p class="description"><?php _e('Enter the product IDs for upsells, separated by commas.', 'sbwc-order-confirmation-upsells-riode'); ?></p>
         <?php } ?>
@@ -79,11 +79,6 @@ function sbwc_order_confirmation_upsells_riode_options_page()
                 if (function_exists('pll_languages_list')) {
 
                     $languages = pll_languages_list();
-
-                    //debug
-                    // echo '<pre>';
-                    // print_r($languages);
-                    // echo '</pre>';
 
                     foreach ($languages as $language) {
 

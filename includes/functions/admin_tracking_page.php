@@ -23,7 +23,7 @@ function sbwc_order_confirmation_upsells_riode_sales_tracking_page()
                     <option value="yes"><?php _e('Yes', 'woocommerce'); ?></option>
                     <option value="no"><?php _e('No', 'woocommerce'); ?></option>
                 </select>
-                <span class="help"><?php _e('Set this to No if you\'re experiencing server performance issues.','woocommerce'); ?></span>
+                <span class="help"><?php _e('Set this to No if you\'re experiencing server performance issues.', 'woocommerce'); ?></span>
             </span>
             <span class="header-inputs">
                 <label for="clear-tracking"><?php _e('Click to clear tracking: ', 'woocommerce'); ?></label>
@@ -159,6 +159,12 @@ function sbwc_order_confirmation_upsells_riode_sales_tracking_page()
             display: flex;
             align-items: self-end;
             justify-content: space-between;
+        }
+
+        span.help {
+            font-size: initial;
+            text-transform: none;
+            color: var(--wc-red);
         }
     </style>
 <?php
