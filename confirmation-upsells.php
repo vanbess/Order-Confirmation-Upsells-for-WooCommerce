@@ -54,5 +54,11 @@ add_action('plugins_loaded', function () {
 
     // render upsells
     require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/render_upsells.php');
+
+    // register pll strings
+    if(function_exists('pll_register_string')) {
+        pll_register_string('sbwc-order-confirmation-upsells-riode', 'SPECIAL OFFERS FOR YOU EXPIRING IN ');
+    }
+
     
 });
