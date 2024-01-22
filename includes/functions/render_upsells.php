@@ -13,83 +13,170 @@ add_action('woocommerce_thankyou', function () {
     // bail if no upsell ids
     if (!$upsell_product_ids || $upsell_product_ids == '') return;
 
-    // ===================
-    // update impressions
-    // ===================
-    $impressions_curr = get_transient('sbwc_ocus_impressions');
+    // check if tracking is enabled
+    $tracking_enabled = get_option('sbwc_ocus_tracking_enabled');
 
-    // debug impressions to WC log
-    wc_get_logger()->debug('SBWC Order Confirmation Upsells impressions get? ' . print_r($impressions_curr, true));
+    if ($tracking_enabled) {
 
-    $impressions = $impressions_curr ? $impressions_curr : array();
+        // retrieve existing tracking data from db
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'sbwc_conf_upsells_tracking';
+        $results    = $wpdb->get_results("SELECT * FROM $table_name");
 
-    foreach ($upsell_product_ids as $upsell_product_id) {
-        $impressions[$upsell_product_id] = isset($impressions[$upsell_product_id]) ? $impressions[$upsell_product_id] + 1 : 1;
+        // if $results contain product id IN $upsell_product_ids, increment impressions, else insert new row with product id and increment impressions
+        foreach ($upsell_product_ids as $product_id) {
+
+            // if $results contain product id IN $upsell_product_ids, increment impressions
+            if (in_array($product_id, array_column($results, 'product_id'))) {
+
+                // get row index
+                $row_index = array_search($product_id, array_column($results, 'product_id'));
+
+                // increment impressions
+                $results[$row_index]->impressions++;
+
+                // update row
+                $wpdb->update(
+                    $table_name,
+                    array(
+                        'impressions' => $results[$row_index]->impressions,
+                    ),
+                    array(
+                        'product_id' => $product_id,
+                    )
+                );
+            } else {
+
+                // insert new row with product id and increment impressions
+                $wpdb->insert(
+                    $table_name,
+                    array(
+                        'product_id'      => $product_id,
+                        'impressions'     => 0,
+                        'click_count'     => 0,
+                        'active'          => 0,
+                        'sales_qty'       => 0,
+                        'conversion_rate' => 0,
+                        'revenue'         => 0,
+
+                    )
+                );
+            }
+        }
     }
 
-    $impressions_set = set_transient('sbwc_ocus_impressions', $impressions, 1200);
-
-    // debug impressions to WC log
-    wc_get_logger()->debug('SBWC Order Confirmation Upsells impressions set? ' . print_r($impressions_set, true));
-
-    $order_id = wc_get_order_id_by_order_key($_GET['key']);
-
-    // Get the order from order key
-    $order = wc_get_order($order_id);
-
-    // Get the order products
-    $order_products = $order->get_items();
+    session_start();
 
     // debug
-    // foreach ($order_products as $order_product) :
-    //     echo '<pre>';
-    //     print_r($order_product->get_data());
-    //     echo '</pre>';
-    // endforeach;
+    // echo '<pre>';
+    // print_r($_SESSION);
+    // echo '</pre>';
 
-    // =============
-    // update sales
-    // =============
+    if (isset($_SESSION['us_checkout_form'])){
 
-    // debug
-    // delete_transient('sbwc_ocus_sales_data');
-    // return;
+        // get order id from order key
+        $order_id = wc_get_order_id_by_order_key($_GET['key']);
+    
+        // get order
+        $order = wc_get_order($order_id);
 
-    // Add order products to options table option 'sbwc_ocus_sales_data' in array format: [$order_id][] = [$product_id => $qty]
-    $ocus_sales_data = get_transient('sbwc_ocus_sales_data');
+        // get order currency
+        $order_currency = $order->get_currency();
+    
+        // get order line items
+        $order_items = $order->get_items('line_item');
 
-    // debug current sales data to WC log
-    wc_get_logger()->debug('SBWC Order Confirmation Upsells sales data get? ' . print_r($ocus_sales_data, true));
+        // loop
+        foreach ($order_items as $order_item) {
 
-    $order_id = $order->get_id();
+            // get product id
+            $product_id = $order_item->get_product_id();
 
-    // if order id does not exist in $ocus_sales_data, add it
-    if (!array_key_exists($order_id, $ocus_sales_data)) :
+            // get product price
+            $product_price = $order_item->get_total();
 
-        foreach ($order_products as $order_product) {
-            $product_id                 = $order_product->get_id();
-            $qty                        = $order_product->get_quantity();
-            $ocus_sales_data[$order_id] = [$product_id => $qty];
+            // if order currency not USD, convert price to USD
+            if ($order_currency !== 'USD') {
+
+                // get conversion rate
+                $conversion_rate = get_option('alg_currency_switcher_exchange_rate_USD_' . $order_currency);
+
+                // convert price to USD
+                $product_price = $product_price / $conversion_rate;
+            }
+
+            // if $results contain product id IN $upsell_product_ids, increment sales_qty
+            if (in_array($product_id, array_column($results, 'product_id'))) {
+
+                // get row index
+                $row_index = array_search($product_id, array_column($results, 'product_id'));
+
+                // increment sales_qty
+                $results[$row_index]->sales_qty += $order_item->get_quantity();
+
+                // update row
+                $wpdb->update(
+                    $table_name,
+                    array(
+                        'sales_qty' => $results[$row_index]->sales_qty,
+                    ),
+                    array(
+                        'product_id' => $product_id,
+                    )
+                );
+            }
+
+            // if $results contain product id IN $upsell_product_ids, increment revenue
+            if (in_array($product_id, array_column($results, 'product_id'))) {
+
+                // get row index
+                $row_index = array_search($product_id, array_column($results, 'product_id'));
+
+                // increment revenue
+                $results[$row_index]->revenue += $product_price;
+
+                // update row
+                $wpdb->update(
+                    $table_name,
+                    array(
+                        'revenue' => $results[$row_index]->revenue,
+                    ),
+                    array(
+                        'product_id' => $product_id,
+                    )
+                );
+            }
+
+            // if $results contain product id IN $upsell_product_ids, calculate conversion rate
+            if (in_array($product_id, array_column($results, 'product_id'))) {
+
+                // get row index
+                $row_index = array_search($product_id, array_column($results, 'product_id'));
+
+                // calculate conversion rate
+                $results[$row_index]->conversion_rate = $results[$row_index]->sales_qty / $results[$row_index]->impressions;
+
+                // update row
+                $wpdb->update(
+                    $table_name,
+                    array(
+                        'conversion_rate' => $results[$row_index]->conversion_rate,
+                    ),
+                    array(
+                        'product_id' => $product_id,
+                    )
+                );
+            }
+
         }
 
-        $sales_data_set = set_transient('sbwc_ocus_sales_data', $ocus_sales_data, 1200);
+        // destroy session to be safe
+        session_destroy();
 
-        // debug current sales data to WC log
-        wc_get_logger()->debug('SBWC Order Confirmation Upsells sales data set? ' . print_r($sales_data_set, true));
+        // bail since upsells have already been rendered
+        return;
 
-    endif;
-
-    // debug
-    // print_r($ocus_sales_data);
-
-    // =================================
-    // bail if upsells already rendered
-    // =================================
-
-    // bail if $_SESSION['us_checkout_form'] is set
-    // bail if $_SESSION['us_checkout_form'] is set
-    // session_start();
-    // if (isset($_SESSION['us_checkout_form'])) return;
+    }
 
 ?>
 
@@ -201,264 +288,264 @@ add_action('woocommerce_thankyou', function () {
             <script id="us_js_misc_qty">
                 $ = jQuery.noConflict();
 
-        jQuery(window).on('load', function() {
+                jQuery(window).on('load', function() {
 
-            // holds product id: cart item key pairs    
-            var cart_item_keys = {};
+                    // holds product id: cart item key pairs    
+                    var cart_item_keys = {};
 
-            // ------------------------
-            // qty plus minus on click
-            // ------------------------
+                    // ------------------------
+                    // qty plus minus on click
+                    // ------------------------
 
-            // plus
-            $('.us_inc_qty').click(function() {
+                    // plus
+                    $('.us_inc_qty').click(function() {
 
-                // get input value
-                var input_val = $(this).parent().find('input').val();
+                        // get input value
+                        var input_val = $(this).parent().find('input').val();
 
-                // increment input value
-                input_val++;
+                        // increment input value
+                        input_val++;
 
-                // set input value
-                $(this).parent().find('input').val(input_val);
+                        // set input value
+                        $(this).parent().find('input').val(input_val);
 
-                // set checkbox qty attribute
-                $(this).parent().parent().parent().find('input').attr('qty', input_val);
-
-            });
-
-            // minus
-            $('.us_dec_qty').click(function() {
-
-                // get input value
-                var input_val = $(this).parent().find('input').val();
-
-                // decrement input value
-                input_val--;
-
-                // set input value
-                $(this).parent().find('input').val(input_val);
-
-                // set checkbox qty attribute
-                $(this).parent().parent().parent().find('input').attr('qty', input_val);
-
-            });
-
-            // --------------------------------------------------------------------------------
-            // when item is added to cart, get its key and push to cart_item_keys array
-            // --------------------------------------------------------------------------------
-            $(document).on('added_to_cart', function(event, fragments, cart_hash, $button) {
-
-                // create cart nonce dummy element
-                let cart_nonce = $('<?php echo wp_nonce_field('woocommerce-cart', 'woocommerce-cart-nonce') ?>');
-
-                // retrieve nonce value
-                let nonce = cart_nonce.val();
-
-                //  get all checked checkbox values
-                $('.us_checkbox:checked').each(function() {
-
-                    // get product id
-                    let product_id = $(this).val();
-
-                    // get cart item key
-                    let cart_item_key = $('.mini-list a[data-product_id="' + product_id + '"]').attr('data-cart_item_key');
-
-                    // set checkbox data attribute to cart item key
-                    $(this).attr('data-cart_item_key', cart_item_key);
-
-                });
-
-            });
-
-            // --------------------------------------------------------------------------------
-            // checkbox on click; if checked, trigger click on hidden button to show quickview
-            // --------------------------------------------------------------------------------
-            $('.us_checkbox').click(function() {
-
-                // if checked
-                if ($(this).is(':checked')) {
-
-                    // Display loading spinner
-                    var spinner = $('<div class="us_spinner"></div>');
-                    $(this).parents('.us_prod_cont').append(spinner);
-
-                    // get qty
-                    var qty = $(this).attr('qty');
-
-                    // Dim content
-                    $(this).parents('.us_prod_inner_cont').addClass('us_dimmed');
-
-                    // trigger click on hidden button
-                    $(this).parents('.us_prod_cont').find('.btn-quickview').trigger('click');
-
-                    // check which ajax event was triggered
-                    $(document).ajaxComplete(function(event, xhr, settings) {
-
-                        setTimeout(() => {
-
-                            // remove spinner
-                            $('.us_spinner').remove();
-
-                            // remove dimmed class
-                            $('.us_prod_inner_cont').removeClass('us_dimmed');
-
-                            // set qty inside mfp-content form element (input with name 'quantity')
-                            $('.mfp-content').find('input[name="quantity"]').val(qty);
-
-                            // if .mfp-close exists
-                            if ($(document).find('.mfp-close').length) {
-
-                                $(document).find('.mfp-close').one('click', function() {
-
-                                    // console.log('clicked');
-
-                                    // retrieve product id
-                                    let product_id = $(this).parents('.mfp-content').find('input[name="product_id"]').val();
-
-                                    // set target
-                                    let target = $(this).parents('.us_prod_cont').find('#us_checkbox_' + product_id);
-
-                                    // uncheck checkbox with product id
-                                    $('#us_checkbox_' + product_id).prop('checked', false);
-
-                                });
-                            }
-
-                        }, 2000);
+                        // set checkbox qty attribute
+                        $(this).parent().parent().parent().find('input').attr('qty', input_val);
 
                     });
-                }
 
-                // if unchecked, remove item from cart
-                if (!$(this).is(':checked')) {
+                    // minus
+                    $('.us_dec_qty').click(function() {
 
-                    // console.log('unchecked');
+                        // get input value
+                        var input_val = $(this).parent().find('input').val();
 
-                    // get cart item key
-                    let cart_item_key = $(this).attr('data-cart_item_key');
+                        // decrement input value
+                        input_val--;
 
-                    // get product id from checkbox value
-                    let product_id = $(this).val();
+                        // set input value
+                        $(this).parent().find('input').val(input_val);
 
-                    // retrieve remove from cart url from cart_item_keys array
-                    let remove_from_cart_url = cart_item_keys[product_id];
+                        // set checkbox qty attribute
+                        $(this).parent().parent().parent().find('input').attr('qty', input_val);
 
-                    // create dummy element with remove from cart url
-                    let remove_from_cart_url_dummy = $('<a href="' + remove_from_cart_url + '">Remove</a>');
+                    });
 
-                    // trigger click on dummy element
-                    remove_from_cart_url_dummy.trigger('click');
+                    // --------------------------------------------------------------------------------
+                    // when item is added to cart, get its key and push to cart_item_keys array
+                    // --------------------------------------------------------------------------------
+                    $(document).on('added_to_cart', function(event, fragments, cart_hash, $button) {
 
-                    // send ajax request to get updated checkout form
-                    data = {
-                        '_ajax_nonce': '<?php echo wp_create_nonce('us get checkout form') ?>',
-                        'action': 'sbwc_ocus_get_co_form',
-                        'cart_item_key': cart_item_key,
-                    }
+                        // create cart nonce dummy element
+                        let cart_nonce = $('<?php echo wp_nonce_field('woocommerce-cart', 'woocommerce-cart-nonce') ?>');
 
-                    $.post('<?php echo admin_url('admin-ajax.php'); ?>', data, function(response) {
+                        // retrieve nonce value
+                        let nonce = cart_nonce.val();
 
-                        // console.log(response)
+                        //  get all checked checkbox values
+                        $('.us_checkbox:checked').each(function() {
 
-                        if (response == 'Cart is currently empty.') {
-                            $('#us_checkout_form').empty().hide();
-                        } else {
-                            $('#us_checkout_form').empty().append(response).show();
+                            // get product id
+                            let product_id = $(this).val();
+
+                            // get cart item key
+                            let cart_item_key = $('.mini-list a[data-product_id="' + product_id + '"]').attr('data-cart_item_key');
+
+                            // set checkbox data attribute to cart item key
+                            $(this).attr('data-cart_item_key', cart_item_key);
+
+                        });
+
+                    });
+
+                    // --------------------------------------------------------------------------------
+                    // checkbox on click; if checked, trigger click on hidden button to show quickview
+                    // --------------------------------------------------------------------------------
+                    $('.us_checkbox').click(function() {
+
+                        // if checked
+                        if ($(this).is(':checked')) {
+
+                            // Display loading spinner
+                            var spinner = $('<div class="us_spinner"></div>');
+                            $(this).parents('.us_prod_cont').append(spinner);
+
+                            // get qty
+                            var qty = $(this).attr('qty');
+
+                            // Dim content
+                            $(this).parents('.us_prod_inner_cont').addClass('us_dimmed');
+
+                            // trigger click on hidden button
+                            $(this).parents('.us_prod_cont').find('.btn-quickview').trigger('click');
+
+                            // check which ajax event was triggered
+                            $(document).ajaxComplete(function(event, xhr, settings) {
+
+                                setTimeout(() => {
+
+                                    // remove spinner
+                                    $('.us_spinner').remove();
+
+                                    // remove dimmed class
+                                    $('.us_prod_inner_cont').removeClass('us_dimmed');
+
+                                    // set qty inside mfp-content form element (input with name 'quantity')
+                                    $('.mfp-content').find('input[name="quantity"]').val(qty);
+
+                                    // if .mfp-close exists
+                                    if ($(document).find('.mfp-close').length) {
+
+                                        $(document).find('.mfp-close').one('click', function() {
+
+                                            // console.log('clicked');
+
+                                            // retrieve product id
+                                            let product_id = $(this).parents('.mfp-content').find('input[name="product_id"]').val();
+
+                                            // set target
+                                            let target = $(this).parents('.us_prod_cont').find('#us_checkbox_' + product_id);
+
+                                            // uncheck checkbox with product id
+                                            $('#us_checkbox_' + product_id).prop('checked', false);
+
+                                        });
+                                    }
+
+                                }, 2000);
+
+                            });
                         }
 
-                        // trigger fragment refresh
-                        $(document).trigger('wc_fragment_refresh');
+                        // if unchecked, remove item from cart
+                        if (!$(this).is(':checked')) {
 
-                        // trigger mini cart fragment refresh
-                        $(document).trigger('wc_fragments_refreshed');
+                            // console.log('unchecked');
 
-                    })
+                            // get cart item key
+                            let cart_item_key = $(this).attr('data-cart_item_key');
 
-                }
-            });
+                            // get product id from checkbox value
+                            let product_id = $(this).val();
 
-            // ---------------------------------------------------
-            // if added to cart successfully, hide .mfp-product
-            // ---------------------------------------------------
-            $(document).on('added_to_cart', function(event, fragments, cart_hash, $button) {
+                            // retrieve remove from cart url from cart_item_keys array
+                            let remove_from_cart_url = cart_item_keys[product_id];
 
-                // close popup
-                $.magnificPopup.close();
+                            // create dummy element with remove from cart url
+                            let remove_from_cart_url_dummy = $('<a href="' + remove_from_cart_url + '">Remove</a>');
 
-                data = {
-                    '_ajax_nonce': '<?php echo wp_create_nonce('us get checkout form') ?>',
-                    'action': 'sbwc_ocus_get_co_form',
-                    'order_id': $(document).find('#sbwc_ocus_checkout_form').attr('data-current-order') ? $(document).find('#sbwc_ocus_checkout_form').attr('data-current-order') : 'false',
-                    'previous_order_key': '<?php echo $_GET['key']; ?>',
-                }
+                            // trigger click on dummy element
+                            remove_from_cart_url_dummy.trigger('click');
 
-                console.log(data);
+                            // send ajax request to get updated checkout form
+                            data = {
+                                '_ajax_nonce': '<?php echo wp_create_nonce('us get checkout form') ?>',
+                                'action': 'sbwc_ocus_get_co_form',
+                                'cart_item_key': cart_item_key,
+                            }
 
-                $.post('<?php echo admin_url('admin-ajax.php'); ?>', data, function(response) {
+                            $.post('<?php echo admin_url('admin-ajax.php'); ?>', data, function(response) {
 
-                    // console.log(response);
+                                // console.log(response)
 
-                    if (response == 'Cart is currently empty.') {
-                        $('#us_checkout_form').empty().hide();
-                    } else {
-                        $('#us_checkout_form').empty().append(response).show();
+                                if (response == 'Cart is currently empty.') {
+                                    $('#us_checkout_form').empty().hide();
+                                } else {
+                                    $('#us_checkout_form').empty().append(response).show();
+                                }
+
+                                // trigger fragment refresh
+                                $(document).trigger('wc_fragment_refresh');
+
+                                // trigger mini cart fragment refresh
+                                $(document).trigger('wc_fragments_refreshed');
+
+                            })
+
+                        }
+                    });
+
+                    // ---------------------------------------------------
+                    // if added to cart successfully, hide .mfp-product
+                    // ---------------------------------------------------
+                    $(document).on('added_to_cart', function(event, fragments, cart_hash, $button) {
+
+                        // close popup
+                        $.magnificPopup.close();
+
+                        data = {
+                            '_ajax_nonce': '<?php echo wp_create_nonce('us get checkout form') ?>',
+                            'action': 'sbwc_ocus_get_co_form',
+                            'order_id': $(document).find('#sbwc_ocus_checkout_form').attr('data-current-order') ? $(document).find('#sbwc_ocus_checkout_form').attr('data-current-order') : 'false',
+                            'previous_order_key': '<?php echo $_GET['key']; ?>',
+                        }
+
+                        console.log(data);
+
+                        $.post('<?php echo admin_url('admin-ajax.php'); ?>', data, function(response) {
+
+                            // console.log(response);
+
+                            if (response == 'Cart is currently empty.') {
+                                $('#us_checkout_form').empty().hide();
+                            } else {
+                                $('#us_checkout_form').empty().append(response).show();
+                            }
+
+                            // trigger fragment refresh
+                            $(document).trigger('wc_fragment_refresh');
+
+                            // trigger mini cart fragment refresh
+                            $(document).trigger('wc_fragments_refreshed');
+
+
+                        })
+
+                    });
+
+                    // ---------------------------------------------------
+                    // if referrer is wc checkout, uncheck all checkboxes
+                    // ---------------------------------------------------
+                    if (document.referrer == '<?php echo wc_get_checkout_url(); ?>') {
+
+                        // uncheck all checkboxes
+                        $('.us_checkbox').prop('checked', false);
+
+                        // remove go to cart button
+                        $('.us_go_to_cart_btn').remove();
+
                     }
 
-                    // trigger fragment refresh
-                    $(document).trigger('wc_fragment_refresh');
+                    // -------------------------
+                    // place order button click
+                    // -------------------------
+                    $(document).on('click', '#place_order', function() {
+                        var spinner = $('<div class="us_spinner_checkout"></div>');
+                        $('#us_checkout_form').append(spinner);
+                        $('#us_checkout_form').addClass('us_dimmed');
+                    });
 
-                    // trigger mini cart fragment refresh
-                    $(document).trigger('wc_fragments_refreshed');
+                    // -------------------------
+                    // register upsell clicks
+                    // -------------------------
+                    $('.us_prod_cont').on('mousedown', function() {
 
+                        // get checkbox value
+                        let checkbox_val = $(this).find('.us_checkbox').val();
 
-                })
+                        $.post('<?php echo admin_url('admin-ajax.php'); ?>', {
+                            '_ajax_nonce': '<?php echo wp_create_nonce('us register clicks') ?>',
+                            'action': 'sbwc_ocus_register_clicks',
+                            'product_id': checkbox_val,
+                        }, function(response) {
+                            // debug
+                            // console.log(response);
+                        });
 
-            });
+                    });
 
-            // ---------------------------------------------------
-            // if referrer is wc checkout, uncheck all checkboxes
-            // ---------------------------------------------------
-            if (document.referrer == '<?php echo wc_get_checkout_url(); ?>') {
-
-                // uncheck all checkboxes
-                $('.us_checkbox').prop('checked', false);
-
-                // remove go to cart button
-                $('.us_go_to_cart_btn').remove();
-
-            }
-
-            // -------------------------
-            // place order button click
-            // -------------------------
-            $(document).on('click', '#place_order', function() {
-                var spinner = $('<div class="us_spinner_checkout"></div>');
-                $('#us_checkout_form').append(spinner);
-                $('#us_checkout_form').addClass('us_dimmed');
-            });
-
-            // -------------------------
-            // register upsell clicks
-            // -------------------------
-            $('.us_prod_cont').on('mousedown', function() {
-
-                // get checkbox value
-                let checkbox_val = $(this).find('.us_checkbox').val();
-
-                $.post('<?php echo admin_url('admin-ajax.php'); ?>', {
-                    '_ajax_nonce': '<?php echo wp_create_nonce('us register clicks') ?>',
-                    'action': 'sbwc_ocus_register_clicks',
-                    'product_id': checkbox_val,
-                }, function(response) {
-                    // debug
-                    // console.log(response);
                 });
-
-            });
-
-        });
-    </script>
+            </script>
 
             <style>
                 h5#upsell-v2-product-upsell-title {
@@ -473,427 +560,434 @@ add_action('woocommerce_thankyou', function () {
                     display: none;
                 }
 
-        /* dimmed class */
-        .us_dimmed {
-            opacity: 0.5;
-        }
-
-        /* spinner */
-        .us_spinner {
-            position: absolute;
-            top: 40%;
-            left: 45%;
-            transform: translate(-50%, -50%);
-            border: 3px solid #f3f3f3;
-            border-radius: 50%;
-            border-top: 3px solid #3498db;
-            width: 40px;
-            height: 40px;
-            -webkit-animation: spin 0.5s linear infinite;
-            animation: spin 0.5s linear infinite;
-            z-index: 1000;
-        }
-
-        /* spinner checkout form */
-        .us_spinner_checkout {
-            position: absolute;
-            top: 40%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            border: 3px solid #f3f3f3;
-            border-radius: 50%;
-            border-top: 3px solid #3498db;
-            width: 40px;
-            height: 40px;
-            -webkit-animation: spin 0.5s linear infinite;
-            animation: spin 0.5s linear infinite;
-            z-index: 1000;
-        }
-
-        /* flexbox for .us_cont */
-        .us_cont {
-            display: flex;
-            flex-wrap: wrap;
-            margin-bottom: 60px;
-            margin-top: 30px;
-        }
-
-        /* product title cont 50% width */
-        .us_prod_title_price_qty_cont {
-            width: 50%;
-            padding: 5px;
-            position: relative;
-            text-align: center;
-        }
-
-        /* product title font size 1.5rem and weight 600 */
-        .us_prod_title_price_qty_cont h3 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin: 10px 0px 10px 0px;
-            color: var(--rio-primary-color);
-        }
-
-        /* align price to center and make font size 1.6rem */
-        .us_prod_title_price_qty_cont p {
-            font-size: 2rem;
-            margin: 28px 10px 0px 0px;
-            color: var(--rio-secondary-color, #d26e4b);
-            font-weight: 600;
-        }
-
-        .us_prod_cont {
-            position: relative;
-            width: 33.333%;
-        }
-
-        /* text decoration none for all links */
-        .us_prod_cont a {
-            text-decoration: none !important;
-        }
-
-        /* disable up and down arrows for qty input */
-        .us_prod_qty_cont input::-webkit-outer-spin-button,
-        .us_prod_qty_cont input::-webkit-inner-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
-
-        .us_prod_qty_cont {
-            display: flex;
-            align-items: center;
-            padding-left: 13px;
-            padding-bottom: 8px;
-            padding-right: 10px;
-            position: absolute;
-            bottom: 4%;
-            left: 8%;
-        }
-
-        /* input plus and minus buttons display inline; input and buttons max height 30px; buttons max width 30px */
-        .us_prod_qty_cont input {
-            display: inline;
-            height: 35px;
-            width: 60px;
-            line-height: 0.6;
-            border: 1px solid #ddd;
-            box-shadow: none;
-            background: white;
-            box-sizing: border-box;
-            text-align: center;
-        }
-
-        .us_prod_qty_cont button {
-            display: inline;
-            height: 35px;
-            width: 35px;
-            line-height: 0.6;
-            padding: 0;
-            background: #dcdcdc;
-            text-align: center;
-            border: none;
-            cursor: pointer;
-        }
-
-        /* light background for checkbox input cont */
-        .us_prod_checkbox_cont {
-            background: #f8f8f8;
-            width: 15%;
-            padding: 0px;
-            text-align: center;
-            position: relative;
-        }
-
-        /* checkbox vertical align center, horizontal align center, slightly increase width and height and add small box shadow */
-        .us_prod_checkbox_cont input {
-            width: 20px;
-            height: 20px;
-            box-shadow: 0px 2px 3px lightgrey;
-            position: absolute;
-            top: 42%;
-            left: 31%;
-            cursor: pointer;
-        }
-
-        /* us_prod_cont display content flex */
-        .us_prod_inner_cont {
-            display: flex;
-            border-radius: 5px;
-            box-shadow: 0px 0px 3px lightgrey;
-            margin: 10px;
-            box-sizing: border-box;
-            position: relative;
-        }
-
-        /* product img cont 40% width */
-        .us_prod_img_cont {
-            width: 35%;
-            padding: 15px 0px 15px 15px;
-        }
-
-        /* product checkbox cont 10% width */
-        .us_prod_checkbox_cont {
-            width: 15%;
-            padding: 0px;
-        }
-
-        /* h2 title display block and font-weight semi-bold, large font size */
-        .us_title_cont h2 {
-            font-weight: 600;
-            font-size: 2rem;
-            margin: 0px 0px 40px 0px;
-            text-align: center;
-            color: #666;
-        }
-
-        /* countdown clock text align center, large font, bright background, 15px padding top and bottom, bold text, box shadow, 40px margin bottom */
-        #countdown-clock {
-            text-align: center;
-            font-size: 2.5rem;
-            background: #f8f8f8;
-            padding: 15px 0px;
-            font-weight: 600;
-            border: 5px dotted #e3e3e3;
-            margin-bottom: 40px;
-            color: #666;
-            border-radius: 5px;
-        }
-
-        /* time in minutes */
-        .us_time_minutes {
-            background: var(--rio-alert-color);
-            padding: 5px 10px;
-            border-radius: 5px;
-            color: white;
-            margin-right: 10px;
-            margin-left: 5px;
-            text-shadow: none;
-        }
-
-        /* time in seconds */
-        .us_time_seconds {
-            background: var(--rio-alert-color);
-            padding: 5px 10px;
-            border-radius: 5px;
-            color: white;
-            text-shadow: none;
-        }
-
-        /* product img width 100% */
-        .us_prod_img_cont img {
-            width: 100%;
-        }
-
-        .star-rating {
-            left: 5px;
-            top: 6px;
-        }
-
-        .mfp-content .star-rating {
-            top: 0px;
-            left: 0px;
-        }
-
-        .mfp-content form {
-            overflow-x: hidden;
-        }
-
-        a.button.button-primary.us_go_to_cart_btn {
-            width: 100%;
-            margin-top: 40px;
-            border-radius: 5px;
-            box-shadow: 0px 0px 4px lightgray;
-        }
-
-        .woocommerce-form-coupon-toggle {
-            display: none;
-        }
-
-        div#us_checkout_form {
-            background: #f8f8f8;
-            padding: 30px 30px 0 30px;
-            margin-top: 40px;
-            border-radius: 5px;
-            box-shadow: 0px 0px 3px lightgrey;
-        }
-
-        div#order_review {
-            background: white;
-        }
-
-        button#pbs_bundle_atc {
-            display: none;
-        }
-
-        div#us_checkout_form {
-            display: none;
-            position: relative;
-        }
-
-        /* 1600 */
-        @media screen and (max-width: 1600px) {}
-
-        /* 1536 */
-        @media screen and (max-width: 1536px) {}
-
-        /* 1440 */
-        @media screen and (max-width: 1440px) {}
-
-        /* 1366 */
-        @media screen and (max-width: 1366px) {}
-
-        /* 1280 */
-        @media screen and (max-width: 1280px) {}
-
-        /* 962 */
-        @media screen and (max-width: 962px) {
-            .us_prod_cont {
-                width: 50%;
-            }
-
-            .us_prod_title_price_qty_cont h3 {
-                font-size: 1.7rem;
-            }
-
-            .us_prod_title_price_qty_cont p {
-                font-size: 1.8rem;
-                margin: 40px 10px 0px 0px;
-            }
-
-            .us_prod_checkbox_cont input {
-                left: 36%;
-            }
-
-            .us_prod_qty_cont {
-                left: 15%;
-            }
-
-            .star-rating {
-                left: 18px;
-            }
-
-            #countdown-clock {
-                font-size: 2.2rem;
-            }
-        }
-
-        /* 810 */
-        @media screen and (max-width: 810px) {
-            .us_prod_title_price_qty_cont h3 {
-                font-size: 1.6rem;
-            }
-
-            .us_prod_title_price_qty_cont p {
-                font-size: 1.7rem;
-                margin: 26px 0px 0px;
-            }
-
-            .star-rating {
-                left: 6px;
-            }
-
-            .us_prod_qty_cont {
-                left: 7%;
-            }
-
-            .mfp-product .mfp-content,
-            .mfp-product .mfp-preloader,
-            .mfp-product .product {
-                height: 80%;
-            }
-
-
-        }
-
-        /* 800*/
-        @media screen and (max-width: 800px) {}
-
-        /* 768 */
-        @media screen and (max-width: 768px) {
-            .us_prod_title_price_qty_cont h3 {
-                font-size: 1.5rem;
-            }
-
-            .star-rating {
-                left: 0px;
-            }
-
-            .us_prod_qty_cont {
-                left: 4%;
-            }
-
-            .us_prod_checkbox_cont input {
-                left: 33%;
-            }
-        }
-
-        /* 414 */
-        @media screen and (max-width: 414px) {
-            .us_prod_cont {
-                width: 100%;
-            }
-
-            .star-rating {
-                left: 4px;
-            }
-
-            .us_prod_qty_cont {
-                left: 7%;
-            }
-
-            .mfp-product .mfp-content,
-            .mfp-product .mfp-preloader,
-            .mfp-product .product {
-                height: initial;
-            }
-        }
-
-        /* 393 */
-        @media screen and (max-width: 393px) {
-            .us_prod_qty_cont {
-                left: 5%;
-            }
-
-            .star-rating {
-                left: 2px;
-            }
-        }
-
-        /* 390 */
-        @media screen and (max-width: 390px) {
-            .us_prod_qty_cont {
-                left: 4%;
-            }
-
-            .star-rating {
-                left: 0px;
-            }
-        }
-
-        /* 360 */
-        @media screen and (max-width: 360px) {
-            .star-rating {
-                left: -5px;
-            }
-
-            .us_prod_qty_cont input {
-                width: 45px;
-            }
-
-            .us_prod_qty_cont {
-                bottom: 0;
-            }
-        }
-
-        /* 328 */
-        @media screen and (max-width: 328px) {
-            .us_cont {
-                margin-left: -15px;
-                margin-right: -15px;
-            }
-        }
-    </style>
-<?php }
+                /* dimmed class */
+                .us_dimmed {
+                    opacity: 0.5;
+                }
+
+                /* spinner */
+                .us_spinner {
+                    position: absolute;
+                    top: 40%;
+                    left: 45%;
+                    transform: translate(-50%, -50%);
+                    border: 3px solid #f3f3f3;
+                    border-radius: 50%;
+                    border-top: 3px solid #3498db;
+                    width: 40px;
+                    height: 40px;
+                    -webkit-animation: spin 0.5s linear infinite;
+                    animation: spin 0.5s linear infinite;
+                    z-index: 1000;
+                }
+
+                /* spinner checkout form */
+                .us_spinner_checkout {
+                    position: absolute;
+                    top: 40%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    border: 3px solid #f3f3f3;
+                    border-radius: 50%;
+                    border-top: 3px solid #3498db;
+                    width: 40px;
+                    height: 40px;
+                    -webkit-animation: spin 0.5s linear infinite;
+                    animation: spin 0.5s linear infinite;
+                    z-index: 1000;
+                }
+
+                /* flexbox for .us_cont */
+                .us_cont {
+                    display: flex;
+                    flex-wrap: wrap;
+                    margin-bottom: 60px;
+                    margin-top: 30px;
+                }
+
+                /* product title cont 50% width */
+                .us_prod_title_price_qty_cont {
+                    width: 50%;
+                    padding: 5px;
+                    position: relative;
+                    text-align: center;
+                }
+
+                /* product title font size 1.5rem and weight 600 */
+                .us_prod_title_price_qty_cont h3 {
+                    font-size: 1.5rem;
+                    font-weight: 600;
+                    margin: 10px 0px 10px 0px;
+                    color: var(--rio-primary-color);
+                }
+
+                /* align price to center and make font size 1.6rem */
+                .us_prod_title_price_qty_cont p {
+                    font-size: 2rem;
+                    margin: 28px 10px 0px 0px;
+                    color: var(--rio-secondary-color, #d26e4b);
+                    font-weight: 600;
+                }
+
+                .us_prod_cont {
+                    position: relative;
+                    width: 33.333%;
+                }
+
+                /* text decoration none for all links */
+                .us_prod_cont a {
+                    text-decoration: none !important;
+                }
+
+                /* disable up and down arrows for qty input */
+                .us_prod_qty_cont input::-webkit-outer-spin-button,
+                .us_prod_qty_cont input::-webkit-inner-spin-button {
+                    -webkit-appearance: none;
+                    margin: 0;
+                }
+
+                .us_prod_qty_cont {
+                    display: flex;
+                    align-items: center;
+                    padding-left: 13px;
+                    padding-bottom: 8px;
+                    padding-right: 10px;
+                    position: absolute;
+                    bottom: 4%;
+                    left: 8%;
+                }
+
+                /* input plus and minus buttons display inline; input and buttons max height 30px; buttons max width 30px */
+                .us_prod_qty_cont input {
+                    display: inline;
+                    height: 35px;
+                    width: 60px;
+                    line-height: 0.6;
+                    border: 1px solid #ddd;
+                    box-shadow: none;
+                    background: white;
+                    box-sizing: border-box;
+                    text-align: center;
+                }
+
+                .us_prod_qty_cont button {
+                    display: inline;
+                    height: 35px;
+                    width: 35px;
+                    line-height: 0.6;
+                    padding: 0;
+                    background: #dcdcdc;
+                    text-align: center;
+                    border: none;
+                    cursor: pointer;
+                }
+
+                /* light background for checkbox input cont */
+                .us_prod_checkbox_cont {
+                    background: #f8f8f8;
+                    width: 15%;
+                    padding: 0px;
+                    text-align: center;
+                    position: relative;
+                }
+
+                /* checkbox vertical align center, horizontal align center, slightly increase width and height and add small box shadow */
+                .us_prod_checkbox_cont input {
+                    width: 20px;
+                    height: 20px;
+                    box-shadow: 0px 2px 3px lightgrey;
+                    position: absolute;
+                    top: 42%;
+                    left: 31%;
+                    cursor: pointer;
+                }
+
+                /* us_prod_cont display content flex */
+                .us_prod_inner_cont {
+                    display: flex;
+                    border-radius: 5px;
+                    box-shadow: 0px 0px 3px lightgrey;
+                    margin: 10px;
+                    box-sizing: border-box;
+                    position: relative;
+                }
+
+                /* product img cont 40% width */
+                .us_prod_img_cont {
+                    width: 35%;
+                    padding: 15px 0px 15px 15px;
+                }
+
+                /* product checkbox cont 10% width */
+                .us_prod_checkbox_cont {
+                    width: 15%;
+                    padding: 0px;
+                }
+
+                /* h2 title display block and font-weight semi-bold, large font size */
+                .us_title_cont h2 {
+                    font-weight: 600;
+                    font-size: 2rem;
+                    margin: 0px 0px 40px 0px;
+                    text-align: center;
+                    color: #666;
+                }
+
+                /* countdown clock text align center, large font, bright background, 15px padding top and bottom, bold text, box shadow, 40px margin bottom */
+                #countdown-clock {
+                    text-align: center;
+                    font-size: 2.5rem;
+                    background: #f8f8f8;
+                    padding: 15px 0px;
+                    font-weight: 600;
+                    border: 5px dotted #e3e3e3;
+                    margin-bottom: 40px;
+                    color: #666;
+                    border-radius: 5px;
+                }
+
+                /* time in minutes */
+                .us_time_minutes {
+                    background: var(--rio-alert-color);
+                    padding: 5px 10px;
+                    border-radius: 5px;
+                    color: white;
+                    margin-right: 10px;
+                    margin-left: 5px;
+                    text-shadow: none;
+                }
+
+                /* time in seconds */
+                .us_time_seconds {
+                    background: var(--rio-alert-color);
+                    padding: 5px 10px;
+                    border-radius: 5px;
+                    color: white;
+                    text-shadow: none;
+                }
+
+                /* product img width 100% */
+                .us_prod_img_cont img {
+                    width: 100%;
+                }
+
+                .star-rating {
+                    left: 5px;
+                    top: 6px;
+                }
+
+                .mfp-content .star-rating {
+                    top: 0px;
+                    left: 0px;
+                }
+
+                .mfp-content form {
+                    overflow-x: hidden;
+                }
+
+                a.button.button-primary.us_go_to_cart_btn {
+                    width: 100%;
+                    margin-top: 40px;
+                    border-radius: 5px;
+                    box-shadow: 0px 0px 4px lightgray;
+                }
+
+                .woocommerce-form-coupon-toggle {
+                    display: none;
+                }
+
+                div#us_checkout_form {
+                    background: #f8f8f8;
+                    padding: 30px 30px 0 30px;
+                    margin-top: 40px;
+                    border-radius: 5px;
+                    box-shadow: 0px 0px 3px lightgrey;
+                }
+
+                div#order_review {
+                    background: white;
+                }
+
+                button#pbs_bundle_atc {
+                    display: none;
+                }
+
+                div#us_checkout_form {
+                    display: none;
+                    position: relative;
+                }
+
+                /* 1600 */
+                @media screen and (max-width: 1600px) {}
+
+                /* 1536 */
+                @media screen and (max-width: 1536px) {}
+
+                /* 1440 */
+                @media screen and (max-width: 1440px) {}
+
+                /* 1366 */
+                @media screen and (max-width: 1366px) {}
+
+                /* 1280 */
+                @media screen and (max-width: 1280px) {}
+
+                /* 962 */
+                @media screen and (max-width: 962px) {
+                    .us_prod_cont {
+                        width: 50%;
+                    }
+
+                    .us_prod_title_price_qty_cont h3 {
+                        font-size: 1.7rem;
+                    }
+
+                    .us_prod_title_price_qty_cont p {
+                        font-size: 1.8rem;
+                        margin: 40px 10px 0px 0px;
+                    }
+
+                    .us_prod_checkbox_cont input {
+                        left: 36%;
+                    }
+
+                    .us_prod_qty_cont {
+                        left: 15%;
+                    }
+
+                    .star-rating {
+                        left: 18px;
+                    }
+
+                    #countdown-clock {
+                        font-size: 2.2rem;
+                    }
+                }
+
+                /* 810 */
+                @media screen and (max-width: 810px) {
+                    .us_prod_title_price_qty_cont h3 {
+                        font-size: 1.6rem;
+                    }
+
+                    .us_prod_title_price_qty_cont p {
+                        font-size: 1.7rem;
+                        margin: 26px 0px 0px;
+                    }
+
+                    .star-rating {
+                        left: 6px;
+                    }
+
+                    .us_prod_qty_cont {
+                        left: 7%;
+                    }
+
+                    .mfp-product .mfp-content,
+                    .mfp-product .mfp-preloader,
+                    .mfp-product .product {
+                        height: 80%;
+                    }
+
+
+                }
+
+                /* 800*/
+                @media screen and (max-width: 800px) {}
+
+                /* 768 */
+                @media screen and (max-width: 768px) {
+                    .us_prod_title_price_qty_cont h3 {
+                        font-size: 1.5rem;
+                    }
+
+                    .star-rating {
+                        left: 0px;
+                    }
+
+                    .us_prod_qty_cont {
+                        left: 4%;
+                    }
+
+                    .us_prod_checkbox_cont input {
+                        left: 33%;
+                    }
+                }
+
+                /* 414 */
+                @media screen and (max-width: 414px) {
+                    .us_prod_cont {
+                        width: 100%;
+                    }
+
+                    .star-rating {
+                        left: 4px;
+                    }
+
+                    .us_prod_qty_cont {
+                        left: 7%;
+                    }
+
+                    .mfp-product .mfp-content,
+                    .mfp-product .mfp-preloader,
+                    .mfp-product .product {
+                        height: initial;
+                    }
+                }
+
+                /* 393 */
+                @media screen and (max-width: 393px) {
+                    .us_prod_qty_cont {
+                        left: 5%;
+                    }
+
+                    .star-rating {
+                        left: 2px;
+                    }
+                }
+
+                /* 390 */
+                @media screen and (max-width: 390px) {
+                    .us_prod_qty_cont {
+                        left: 4%;
+                    }
+
+                    .star-rating {
+                        left: 0px;
+                    }
+                }
+
+                /* 360 */
+                @media screen and (max-width: 360px) {
+                    .star-rating {
+                        left: -5px;
+                    }
+
+                    .us_prod_qty_cont input {
+                        width: 45px;
+                    }
+
+                    .us_prod_qty_cont {
+                        bottom: 0;
+                    }
+                }
+
+                /* 328 */
+                @media screen and (max-width: 328px) {
+                    .us_cont {
+                        margin-left: -15px;
+                        margin-right: -15px;
+                    }
+                }
+            </style>
+
+        </div>
+
+        <!-- checkout form cont -->
+        <div id="us_checkout_form"></div>
+
+    </div>
+<?php }, 1);
 
 
 /**
@@ -910,36 +1004,32 @@ function sbwc_ocus_register_clicks()
     // get product id
     $product_id = $_POST['product_id'];
 
-    // get clicks
-    $curr_clicks = get_transient('sbwc_ocus_clicks');
+    // retrieve existing tracking data from db
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'sbwc_conf_upsells_tracking';
+    $results    = $wpdb->get_results("SELECT * FROM $table_name");
 
-    // debug clicks to WC log
-    wc_get_logger()->debug('SBWC Order Confirmation Upsells clicks get? ' . print_r($curr_clicks, true));
+    // if $results contain product id IN $upsell_product_ids, increment click_count
+    if (in_array($product_id, array_column($results, 'product_id'))) {
 
-    // if no clicks, set to empty array
-    if (!$curr_clicks) {
-        $clicks = array();
+        // get row index
+        $row_index = array_search($product_id, array_column($results, 'product_id'));
+
+        // increment click_count
+        $results[$row_index]->click_count++;
+
+        // update row
+        $wpdb->update(
+            $table_name,
+            array(
+                'click_count' => $results[$row_index]->click_count,
+            ),
+            array(
+                'product_id' => $product_id,
+            )
+        );
     }
 
-    // if product id does not exist in $clicks, set to 0
-    if (!isset($clicks[$product_id])) {
-        $clicks[$product_id] = 0;
-    }
-
-    // increment clicks
-    $clicks[$product_id]++;
-
-    // set transient
-    $click_transient_set =  set_transient('sbwc_ocus_clicks', $clicks, 1200);
-
-    // debug clicks to WC log
-    wc_get_logger()->debug('SBWC Order Confirmation Upsells clicks set? ' . print_r($click_transient_set, true));
-
-    if ($click_transient_set) :
-        wp_send_json_success(['clicks cache set' => get_transient('sbwc_ocus_clicks')]);
-    else :
-        wp_send_json('clicks cache not set');
-    endif;
 }
 
 /**

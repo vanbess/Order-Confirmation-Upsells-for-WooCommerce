@@ -1,4 +1,5 @@
 <?php
+
 /**
  * AS Schedule Recurring Action to update tracking
  */
@@ -28,6 +29,11 @@ add_action('sbwc_order_confirmation_upsells_riode_update_tracking', function () 
     // get clicks from cache
     $clicks = get_transient('sbwc_ocus_clicks');
 
+    // if any of the transients are empty for some reason, return
+    if (empty($impressions) || empty($sales_data) || empty($clicks)) {
+        return;
+    }
+
     // debug: log with WC logger to see if transient data is being retrieved
     // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Impressions: ' . print_r($impressions, true));
     // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Sales: ' . print_r($sales_data, true));
@@ -40,7 +46,7 @@ add_action('sbwc_order_confirmation_upsells_riode_update_tracking', function () 
     $products = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}sbwc_conf_upsells_tracking");
 
     // check if products are in tracking table
-    $prods_not_in_table = order_conf_check_if_prod_in_table($impressions, $clicks, $wpdb);
+    // $prods_not_in_table = order_conf_check_if_prod_in_table($impressions, $clicks, $wpdb);
 
     // debug: log with WC logger to see if products are being retrieved
     // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Products: ' . print_r($products, true));
@@ -48,32 +54,49 @@ add_action('sbwc_order_confirmation_upsells_riode_update_tracking', function () 
     // check if product id is in tracking table
     foreach ($products as $product) {
 
-        // search for product id in sales array and, if found, return order id (main array key)
-        $order_id = array_search($product->product_id, array_column($sales_data, 'product_id'));
+        // debug product id
+        // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode - Product ID (top of loop): ' . print_r($product->product_id, true));
+
+        foreach ($sales_data as $order_id => $order_data) :
+
+            // log order data with WC logger to see if order data is being retrieved
+            // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode - order data: ' . print_r($order_data, true));
+
+            if (array_key_exists($product->product_id, $order_data)) :
+                $order_id_to_check = $order_id;
+            endif;
+
+        endforeach;
+
+        // log with WC logger to see if order id is being retrieved
+        // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode - relevant Order ID: ' . print_r($order_id_to_check, true));
 
         // get order from order id
-        $order = wc_get_order($order_id);
+        $order = wc_get_order($order_id_to_check);
+
+        // debug: log with WC logger to see if order is being retrieved
+        // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Order: ' . print_r($order, true));
 
         // get order currency
-        $order_currency = $order->get_currency();
+        $order ? $order_currency = $order->get_currency() : $order_currency = 'USD';
 
         // debug: log with WC logger to see if product id is being retrieved
         // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Product ID: ' . print_r($product->product_id, true));
-
-        // update impressions
-        order_conf_update_impressions($wpdb, $product, $impressions, $prods_not_in_table);
-
-        // update sales qty
-        order_conf_update_sales_qty($wpdb, $product, $sales_data);
-
-        // update clicks
-        order_conf_update_clicks($wpdb, $product, $clicks, $prods_not_in_table);
 
         // calculate conversion rate
         order_conf_calc_conversion($wpdb, $product);
 
         // calculate revenue
         order_conf_calc_revenue($wpdb, $product, $order_currency);
+
+        // update sales qty
+        order_conf_update_sales_qty($wpdb, $product, $sales_data);
+
+        // update impressions
+        order_conf_update_impressions($wpdb, $product, $impressions);
+
+        // update clicks
+        order_conf_update_clicks($wpdb, $product, $clicks);
     }
 });
 
@@ -87,7 +110,8 @@ add_action('sbwc_order_confirmation_upsells_riode_update_tracking', function () 
  *
  * @return array $prods_not_in_table - array of product ids not in tracking table
  */
-function order_conf_check_if_prod_in_table($impressions, $clicks, $wpdb){
+function order_conf_check_if_prod_in_table($impressions, $clicks, $wpdb)
+{
 
     // contains product ids not in tracking table
     $prods_not_in_table = [];
@@ -102,7 +126,7 @@ function order_conf_check_if_prod_in_table($impressions, $clicks, $wpdb){
         $product_id = $wpdb->get_var("SELECT product_id FROM {$wpdb->prefix}sbwc_conf_upsells_tracking WHERE product_id = $key");
 
         // debug: log with WC logger to see if product id is being retrieved
-        // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Product ID: ' . print_r($product_id, true));
+        wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode => Product ID found in tracking table: ' . print_r($product_id, true));
 
         // if product id is not in tracking table, insert new row with product id, click_count, and impressions
         if (!$product_id) {
@@ -143,12 +167,8 @@ function order_conf_check_if_prod_in_table($impressions, $clicks, $wpdb){
  *
  * @return void
  */
-function order_conf_update_impressions($wpdb, $product, $impressions, $prods_not_in_table){
-
-    // if product id in $prods_not_in_table, skip updating impressions
-    if (in_array($product->product_id, $prods_not_in_table)) {
-        return;
-    }
+function order_conf_update_impressions($wpdb, $product, $impressions)
+{
 
     // check if product id is in impressions array
     if (array_key_exists($product->product_id, $impressions)) {
@@ -176,7 +196,6 @@ function order_conf_update_impressions($wpdb, $product, $impressions, $prods_not
             )
         );
     }
-
 }
 
 /**
@@ -188,22 +207,33 @@ function order_conf_update_impressions($wpdb, $product, $impressions, $prods_not
  *
  * @return void
  */
-function order_conf_update_sales_qty($wpdb, $product, $sales_data){
+function order_conf_update_sales_qty($wpdb, $product, $sales_data)
+{
 
     // check if product id is in sales array
-    if (array_key_exists($product->product_id, $sales_data)) {
+    // if (array_key_exists($product->product_id, $sales_data)) {
 
         // debug: log with WC logger to see if product id is in sales array
         // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Product ID is in sales array');
 
         // get sales for product id
-        $sales_qty = $sales_data[$product->product_id];
+        $sales_qty = 0;
+
+        // iterate over the order IDs
+        foreach ($sales_data as $order_id => $order_data) {
+
+            // check if the product ID exists in the order data
+            if (array_key_exists($product->product_id, $order_data)) {
+                // add the sales quantity to the total
+                $sales_qty += $order_data[$product->product_id];
+            }
+        }
 
         // get existing sales qty from tracking table
         $existing_sales_qty = $product->sales_qty;
 
         // debug: log with WC logger to see if sales qty is being retrieved
-        // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Sales Qty: ' . print_r($sales_qty, true));
+        wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode => Sales Qty: ' . print_r($sales_qty, true));
 
         // update sales qty in tracking table
         $wpdb->update(
@@ -215,7 +245,7 @@ function order_conf_update_sales_qty($wpdb, $product, $sales_data){
                 'product_id' => $product->product_id
             )
         );
-    }
+    // }
 }
 
 /**
@@ -224,17 +254,11 @@ function order_conf_update_sales_qty($wpdb, $product, $sales_data){
  * @param  object $wpdb - WordPress database object
  * @param  object $product - product tracking table data object
  * @param  array $clicks - clicks array
- * @param  array $prods_not_in_table - array of product ids not currently in tracking table
  *
  * @return void
  */
-function order_conf_update_clicks($wpdb, $product, $clicks, $prods_not_in_table)
+function order_conf_update_clicks($wpdb, $product, $clicks)
 {
-
-    // if product id in $prods_not_in_table, skip updating impressions
-    if (in_array($product->product_id, $prods_not_in_table)) {
-        return;
-    }
 
     // check if product id is in clicks array
     if (array_key_exists($product->product_id, $clicks)) {
@@ -252,7 +276,7 @@ function order_conf_update_clicks($wpdb, $product, $clicks, $prods_not_in_table)
         // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Clicks Count: ' . print_r($click_count, true));
 
         // update clicks count in tracking table
-        $wpdb->update(
+        $result = $wpdb->update(
             "{$wpdb->prefix}sbwc_conf_upsells_tracking",
             array(
                 'click_count' => $click_count + $existing_click_count
@@ -261,6 +285,13 @@ function order_conf_update_clicks($wpdb, $product, $clicks, $prods_not_in_table)
                 'product_id' => $product->product_id
             )
         );
+
+        // if result === false, log to WC logger
+        if ($result === false) {
+            wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Clicks Count Update Failed');
+        } else {
+            wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Clicks Count Update Success');
+        }
     }
 }
 
@@ -275,7 +306,7 @@ function order_conf_update_clicks($wpdb, $product, $clicks, $prods_not_in_table)
 function order_conf_calc_conversion($wpdb, $product)
 {
     // calculate conversion rate
-    if ($product->impressions > 0) {
+    // if ($product->impressions > 0 && $product->sales_qty > 0) {
 
         // debug: log with WC logger to see if impressions is greater than 0
         // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Impressions is greater than 0');
@@ -284,10 +315,10 @@ function order_conf_calc_conversion($wpdb, $product)
         $conversion_rate = ($product->sales_qty / $product->impressions) * 100;
 
         // debug: log with WC logger to see if conversion rate is being calculated
-        // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Conversion Rate: ' . print_r($conversion_rate, true));
+        wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Conversion Rate: ' . print_r($conversion_rate, true));
 
         // update conversion rate in tracking table
-        $wpdb->update(
+        $result = $wpdb->update(
             "{$wpdb->prefix}sbwc_conf_upsells_tracking",
             array(
                 'conversion_rate' => $conversion_rate
@@ -296,7 +327,14 @@ function order_conf_calc_conversion($wpdb, $product)
                 'product_id' => $product->product_id
             )
         );
-    }
+
+        // if result === false, log to WC logger
+        if ($result === false) {
+            wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Conversion Rate Update Failed');
+        } else {
+            wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Conversion Rate Update Success');
+        }
+    // }
 }
 
 /**
@@ -312,7 +350,7 @@ function order_conf_calc_revenue($wpdb, $product, $order_currency)
 {
 
     // calculate revenue
-    if ($product->sales_qty > 0) {
+    // if ($product->sales_qty > 0) {
 
         // debug: log with WC logger to see if sales qty is greater than 0
         // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Sales Qty is greater than 0');
@@ -322,10 +360,10 @@ function order_conf_calc_revenue($wpdb, $product, $order_currency)
         $revenue = $product->sales_qty * $wc_product->get_price();
 
         // debug: log with WC logger to see if revenue is being calculated
-        // wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Revenue: ' . print_r($revenue, true));
+        wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Revenue: ' . print_r($revenue, true));
 
         // update revenue in tracking table
-        $wpdb->update(
+        $result = $wpdb->update(
             "{$wpdb->prefix}sbwc_conf_upsells_tracking",
             array(
                 'revenue' => $revenue
@@ -334,5 +372,12 @@ function order_conf_calc_revenue($wpdb, $product, $order_currency)
                 'product_id' => $product->product_id
             )
         );
-    }
+
+        // if result === false, log to WC logger
+        if ($result === false) {
+            wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Revenue Update Failed');
+        } else {
+            wc_get_logger()->debug('SBWC Order Confirmation Upsells Riode: Revenue Update Success');
+        }
+    // }
 }

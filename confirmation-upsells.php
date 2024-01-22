@@ -54,8 +54,5 @@ add_action('plugins_loaded', function () {
 
     // render upsells
     require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/render_upsells.php');
-
-    // update tracking
-    require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/as_update_tracking.php');
     
 });
