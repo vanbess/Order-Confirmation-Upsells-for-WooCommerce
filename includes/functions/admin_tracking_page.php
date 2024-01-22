@@ -10,27 +10,36 @@ function sbwc_order_confirmation_upsells_riode_sales_tracking_page()
     // query tracking table
     global $wpdb;
     $table_name = $wpdb->prefix . 'sbwc_conf_upsells_tracking';
-    $results = $wpdb->get_results("SELECT * FROM $table_name"); ?>
+    $results    = $wpdb->get_results("SELECT * FROM $table_name");
+
+    // check if tracking is enabled
+    $tracking_enabled = get_option('sbwc_ocus_tracking_enabled');
+
+?>
 
     <div class="wrap">
 
-        <h1 id="sbwc_ocus_tracking_header">
-            <?php _e('Sales Tracking', 'woocommerce'); ?>
+        <!-- header inputs -->
+        <div class="header-inputs">
 
-            <span class="header-inputs">
-                <label for="tracking-toggle"><?php _e('Tracking enabled?', 'woocommerce'); ?></label>
-                <select name="sbwc_ocus_tracking_enabled" id="sbwc_ocus_tracking_enabled">
-                    <option value="yes"><?php _e('Yes', 'woocommerce'); ?></option>
-                    <option value="no"><?php _e('No', 'woocommerce'); ?></option>
-                </select>
-                <span class="help"><?php _e('Set this to No if you\'re experiencing server performance issues.','woocommerce'); ?></span>
-            </span>
-            <span class="header-inputs">
-                <label for="clear-tracking"><?php _e('Click to clear tracking: ', 'woocommerce'); ?></label>
-                <input type="submit" class="button button-primary" value="<?php _e('Clear Tracking', 'woocommerce'); ?>">
-            </span>
+            <label for="tracking-toggle"><b><i><?php _e('Tracking enabled?', 'woocommerce'); ?></i></b></label>
 
-        </h1>
+            <select name="sbwc_ocus_tracking_enabled" id="sbwc_ocus_tracking_enabled">
+                <option value="yes" <?php echo ($tracking_enabled == 'yes') ? 'selected' : ''; ?>><?php _e('Yes', 'woocommerce'); ?></option>
+                <option value="no" <?php echo ($tracking_enabled == 'no') ? 'selected' : ''; ?>><?php _e('No', 'woocommerce'); ?></option>
+            </select>
+
+            <span class="help"><?php _e('Set this to No if you\'re experiencing server performance issues.', 'woocommerce'); ?></span>
+
+        </div>
+
+        <div class="header-inputs">
+
+            <label for="clear-tracking"><b><i><?php _e('Click to clear tracking: ', 'woocommerce'); ?></i></b></label>
+
+            <input type="submit" class="button button-primary" value="<?php _e('Clear Tracking', 'woocommerce'); ?>">
+
+        </div>
 
         <?php
         // check if table is empty
@@ -152,13 +161,40 @@ function sbwc_order_confirmation_upsells_riode_sales_tracking_page()
 
         .header-inputs label {
             font-size: 14px;
-            margin-right: 10px;
+            margin-right: 5px;
         }
 
         h1#sbwc_ocus_tracking_header {
             display: flex;
             align-items: self-end;
             justify-content: space-between;
+        }
+
+        span.help {
+            color: var(--wc-red);
+        }
+
+        h1#sbwc_ocus_tracking_header {
+            width: 98%;
+        }
+
+        div#hidden-admin-notices-link-wrap {
+            display: none !important;
+        }
+
+        span.header-inputs {
+            display: block;
+        }
+
+        .header-inputs {
+            padding-bottom: 20px;
+        }
+
+        hr {
+            height: 0px;
+            color: #ddd;
+            background-color: #ddd;
+            margin-top: 20px;
         }
     </style>
 <?php

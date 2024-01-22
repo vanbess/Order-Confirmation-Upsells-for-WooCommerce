@@ -13,32 +13,24 @@ add_action('woocommerce_thankyou', function () {
     // bail if no upsell ids
     if (!$upsell_product_ids || $upsell_product_ids == '') return;
 
-    // explode upsell product ids
-    $upsell_product_ids = explode(',', $upsell_product_ids);
-
     // ===================
     // update impressions
     // ===================
-    $impressions = get_transient('sbwc_ocus_impressions');
+    $impressions_curr = get_transient('sbwc_ocus_impressions');
 
-    // debug
-    // delete_transient('sbwc_ocus_impressions');
-    // return
+    // debug impressions to WC log
+    wc_get_logger()->debug('SBWC Order Confirmation Upsells impressions get? ' . print_r($impressions_curr, true));
 
-    if (!$impressions) {
-        $impressions = array();
-    }
+    $impressions = $impressions_curr ? $impressions_curr : array();
 
     foreach ($upsell_product_ids as $upsell_product_id) {
         $impressions[$upsell_product_id] = isset($impressions[$upsell_product_id]) ? $impressions[$upsell_product_id] + 1 : 1;
     }
 
-    set_transient('sbwc_ocus_impressions', $impressions, DAY_IN_SECONDS);
+    $impressions_set = set_transient('sbwc_ocus_impressions', $impressions, 1200);
 
-    // debug impressions
-    // echo '<pre>';
-    // print_r(get_transient('sbwc_ocus_impressions'));
-    // echo '</pre>';
+    // debug impressions to WC log
+    wc_get_logger()->debug('SBWC Order Confirmation Upsells impressions set? ' . print_r($impressions_set, true));
 
     $order_id = wc_get_order_id_by_order_key($_GET['key']);
 
@@ -57,7 +49,10 @@ add_action('woocommerce_thankyou', function () {
     // return;
 
     // Add order products to options table option 'sbwc_ocus_sales_data' in array format: [$order_id][] = [$product_id => $qty]
-    $ocus_sales_data = get_transient('sbwc_ocus_sales_data', array());
+    $ocus_sales_data = get_transient('sbwc_ocus_sales_data');
+
+    // debug current sales data to WC log
+    wc_get_logger()->debug('SBWC Order Confirmation Upsells sales data get? ' . print_r($ocus_sales_data, true));
 
     $order_id = $order->get_id();
 
@@ -65,12 +60,15 @@ add_action('woocommerce_thankyou', function () {
     if (!array_key_exists($order_id, $ocus_sales_data)) :
 
         foreach ($order_products as $order_product) {
-            $product_id                   = $order_product->get_id();
-            $qty                          = $order_product->get_quantity();
-            $ocus_sales_data[$order_id][] = [$product_id => $qty];
+            $product_id                 = $order_product->get_id();
+            $qty                        = $order_product->get_quantity();
+            $ocus_sales_data[$order_id] = [$product_id => $qty];
         }
 
-        set_transient('sbwc_ocus_sales_data', $ocus_sales_data);
+        $sales_data_set = set_transient('sbwc_ocus_sales_data', $ocus_sales_data, 1200);
+
+        // debug current sales data to WC log
+        wc_get_logger()->debug('SBWC Order Confirmation Upsells sales data set? ' . print_r($sales_data_set, true));
 
     endif;
 
@@ -81,7 +79,7 @@ add_action('woocommerce_thankyou', function () {
     // bail if upsells already rendered
     // =================================
 
-    // // bail if $_SESSION['us_checkout_form'] is set
+    // bail if $_SESSION['us_checkout_form'] is set
     // session_start();
     // if (isset($_SESSION['us_checkout_form'])) return;
 
@@ -189,7 +187,6 @@ add_action('woocommerce_thankyou', function () {
             <!-- js -->
             <script id="us_js_misc_qty">
                 $ = jQuery.noConflict();
-
 
                 jQuery(window).on('load', function() {
 
@@ -451,6 +448,14 @@ add_action('woocommerce_thankyou', function () {
             </script>
 
             <style>
+                h5#upsell-v2-product-upsell-title {
+                    display: none;
+                }
+
+                .upsell-v2-product-upsell-table-cont {
+                    display: none;
+                }
+
                 button#vans-riode-buy-now-btn-variable {
                     display: none;
                 }
@@ -900,10 +905,13 @@ function sbwc_ocus_register_clicks()
     $product_id = $_POST['product_id'];
 
     // get clicks
-    $clicks = get_transient('sbwc_ocus_clicks');
+    $curr_clicks = get_transient('sbwc_ocus_clicks');
+
+    // debug clicks to WC log
+    wc_get_logger()->debug('SBWC Order Confirmation Upsells clicks get? ' . print_r($curr_clicks, true));
 
     // if no clicks, set to empty array
-    if (!$clicks) {
+    if (!$curr_clicks) {
         $clicks = array();
     }
 
@@ -916,12 +924,15 @@ function sbwc_ocus_register_clicks()
     $clicks[$product_id]++;
 
     // set transient
-    $click_transient_set =  set_transient('sbwc_ocus_clicks', $clicks, DAY_IN_SECONDS);
+    $click_transient_set =  set_transient('sbwc_ocus_clicks', $clicks, 1200);
+
+    // debug clicks to WC log
+    wc_get_logger()->debug('SBWC Order Confirmation Upsells clicks set? ' . print_r($click_transient_set, true));
 
     if ($click_transient_set) :
-        wp_send_json_success(['clicks transient set' => get_transient('sbwc_ocus_clicks')]);
+        wp_send_json_success(['clicks cache set' => get_transient('sbwc_ocus_clicks')]);
     else :
-        wp_send_json('clicks transient not set');
+        wp_send_json('clicks cache not set');
     endif;
 }
 

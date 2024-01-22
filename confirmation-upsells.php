@@ -49,18 +49,13 @@ add_action('plugins_loaded', function () {
     // register custom db table
     require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/register_db_table.php');
 
-    // update db table
-    require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/update_db_table.php');
-
     // admin settings page
     require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/admin_settings_page.php');
 
-    // admin tracking page
-    require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/admin_tracking_page.php');
-
-    // update tracking via action scheduler
-    require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/as_update_tracking.php');
-
     // render upsells
     require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/render_upsells.php');
+
+    // update tracking
+    require_once(SBWC_ORDER_CONFIRMATION_UPSELLS_RIODE_PATH . 'includes/functions/as_update_tracking.php');
+    
 });
